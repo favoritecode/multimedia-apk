@@ -1,0 +1,11 @@
+.gradle/
+build/
+app/build/
+.tools/
+.vscode/
+local.properties
+*.idsig
+build-output.txt
+commandline-search.txt
+gradle-*/
+gradle-*.zip
