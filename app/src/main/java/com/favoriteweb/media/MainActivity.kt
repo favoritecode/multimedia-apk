@@ -423,6 +423,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 installMediaStateObserver(view)
                 installAdLayerHider(view)
+                installHeaderSearchProtector(view)
                 super.onPageFinished(view, url)
             }
 
@@ -2171,6 +2172,70 @@ class MainActivity : AppCompatActivity() {
                   });
                   scan();
                   window.setInterval(report, 750);
+                })();
+            """.trimIndent(),
+            null
+        )
+    }
+
+    private fun installHeaderSearchProtector(webView: WebView) {
+        webView.evaluateJavascript(
+            """
+                (function(){
+                  if (window.__favoriteHeaderSearchProtectorInstalled) return;
+                  window.__favoriteHeaderSearchProtectorInstalled = true;
+
+                  function restoreHeaderSearch() {
+                    if (document.documentElement.classList.contains('favorite-pip-active')) {
+                      return;
+                    }
+                    var searchInput = document.querySelector('#custom-search-input');
+                    if (!searchInput) return;
+
+                    [
+                      '.head-wrapper',
+                      '.head-container',
+                      '.head-box',
+                      '#head-right',
+                      '#BlogSearch1',
+                      '#BlogSearch1 .widget-content',
+                      '#BlogSearch1 form',
+                      '#custom-search-input',
+                      '#BlogSearch1 .search-line',
+                      '#BlogSearch1 .search-action'
+                    ].forEach(function(selector){
+                      document.querySelectorAll(selector).forEach(function(node){
+                        node.style.removeProperty('display');
+                        node.style.removeProperty('visibility');
+                        node.style.removeProperty('opacity');
+                        node.style.removeProperty('pointer-events');
+                        node.style.setProperty('visibility', 'visible', 'important');
+                        node.style.setProperty('opacity', '1', 'important');
+                        node.style.setProperty('pointer-events', 'auto', 'important');
+                      });
+                    });
+
+                    document.querySelectorAll('.head-wrapper, .head-container').forEach(function(node){
+                      node.style.setProperty('display', 'block', 'important');
+                    });
+                    document.querySelectorAll('.head-box, #head-right, #BlogSearch1 .widget-content').forEach(function(node){
+                      node.style.setProperty('display', 'flex', 'important');
+                    });
+                    document.querySelectorAll('#BlogSearch1, #BlogSearch1 form').forEach(function(node){
+                      node.style.setProperty('display', 'block', 'important');
+                    });
+                  }
+
+                  restoreHeaderSearch();
+                  new MutationObserver(restoreHeaderSearch).observe(document.documentElement, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['class', 'style']
+                  });
+                  window.addEventListener('pageshow', restoreHeaderSearch, { passive: true });
+                  window.addEventListener('focus', restoreHeaderSearch, { passive: true });
+                  window.setInterval(restoreHeaderSearch, 1000);
                 })();
             """.trimIndent(),
             null
