@@ -475,6 +475,9 @@ class MainActivity : AppCompatActivity() {
         super.onPostResume()
         if (!isInPictureInPictureMode) {
             setPipPresentation(false)
+            if (!audioOnlyMode && !nativeAudioStarted) {
+                setVideoVisible(true)
+            }
         }
         updatePictureInPictureParams()
         restoreViewportAfterPip(100L)
@@ -490,19 +493,19 @@ class MainActivity : AppCompatActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (!audioOnlyMode && !nativeAudioStarted && mediaPlaying && activeMediaIsVideo()) {
-            lockMediaContinuity()
-            setPipPresentation(true)
-        }
-        showMediaNotification()
-        if (
-            Build.VERSION.SDK_INT in Build.VERSION_CODES.O until Build.VERSION_CODES.S &&
-            !audioOnlyMode &&
-            !nativeAudioStarted &&
-            mediaPlaying &&
-            activeMediaIsVideo()
-        ) {
-            enterPipNow()
+        refreshMainMediaState {
+            if (
+                !audioOnlyMode &&
+                !nativeAudioStarted &&
+                !youtubeAudioOnlyMode &&
+                !frameAudioOnlyMode &&
+                prepareVideoPipPresentation()
+            ) {
+                if (Build.VERSION.SDK_INT in Build.VERSION_CODES.O until Build.VERSION_CODES.S) {
+                    enterPipNow()
+                }
+            }
+            showMediaNotification()
         }
     }
 
@@ -1448,6 +1451,19 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun restoreForegroundVideoPresentation() {
+        if (youtubeAudioOnlyMode) {
+            youtubeAudioOnlyMode = false
+            setYoutubeAudioPresentation(false)
+        }
+        frameAudioOnlyMode = false
+        if (!nativeAudioStarted) {
+            audioOnlyMode = false
+        }
+        setPipPresentation(false)
+        setVideoVisible(true)
+    }
+
     private fun sendFrameMediaCommand(command: String, positionSeconds: Double? = null) {
         val payload = JSONObject().put("command", command)
         positionSeconds?.let { payload.put("position", it.coerceAtLeast(0.0)) }
@@ -1550,6 +1566,9 @@ class MainActivity : AppCompatActivity() {
                       html.favorite-pip-active iframe[src*='youtube.com/embed/'],
                       html.favorite-pip-active iframe[src*='youtube-nocookie.com/embed/'] {
                         position: fixed !important;
+                        display: block !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
                         inset: 0 !important;
                         width: var(--favorite-pip-width, 100vw) !important;
                         height: var(--favorite-pip-height, 100vh) !important;
@@ -1844,9 +1863,36 @@ class MainActivity : AppCompatActivity() {
             enableAudioOnlyModeNow()
             return
         }
-        lockMediaContinuity()
-        setPipPresentation(true)
+        if (!prepareVideoPipPresentation()) {
+            return
+        }
         runCatching { enterPictureInPictureMode(buildPictureInPictureParams(mediaPlaying)) }
+        mainWebView.postDelayed({
+            if (isInPictureInPictureMode && activeMediaIsVideo()) {
+                setVideoVisible(true)
+                setPipPresentation(true)
+                if (lockedMediaWasPlaying || observedMediaPlaying || mediaPlaying) {
+                    runMediaCommand("play")
+                }
+            }
+        }, 150L)
+    }
+
+    private fun prepareVideoPipPresentation(): Boolean {
+        if (audioOnlyMode || youtubeAudioOnlyMode || frameAudioOnlyMode) {
+            restoreForegroundVideoPresentation()
+        }
+        if (nativeAudioStarted || MediaPlaybackService.isActive) {
+            restoreFromNativeAudio()
+            return false
+        }
+        if (!mediaPlaying || !activeMediaIsVideo()) {
+            return false
+        }
+        lockMediaContinuity()
+        setVideoVisible(true)
+        setPipPresentation(true)
+        return true
     }
 
     private fun aspectRatioFor(width: Int, height: Int): Rational {
