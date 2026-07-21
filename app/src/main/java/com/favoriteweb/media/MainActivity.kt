@@ -497,6 +497,16 @@ class MainActivity : AppCompatActivity() {
             if (
                 !audioOnlyMode &&
                 !nativeAudioStarted &&
+                mediaPlaying &&
+                !activeMediaIsVideo() &&
+                activeMediaSource().isNotBlank()
+            ) {
+                enableAudioOnlyModeNow()
+                return@refreshMainMediaState
+            }
+            if (
+                !audioOnlyMode &&
+                !nativeAudioStarted &&
                 !youtubeAudioOnlyMode &&
                 !frameAudioOnlyMode &&
                 prepareVideoPipPresentation()
@@ -517,7 +527,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        if (!audioOnlyMode && !nativeAudioStarted && mediaPlaying && activeMediaIsVideo()) {
+        if (audioOnlyMode || nativeAudioStarted || !activeMediaIsVideo()) {
+            setPipPresentation(false)
+            updatePictureInPictureParams()
+        } else if (mediaPlaying) {
             lockMediaContinuity()
             setPipPresentation(true)
         }
@@ -1160,12 +1173,14 @@ class MainActivity : AppCompatActivity() {
         enterPipWhenResumed = false
         setPipPresentation(false)
         audioOnlyMode = true
+        updatePictureInPictureParams()
         audioPlaybackRequested = true
         lockMediaContinuity()
         lockedMediaWasPlaying = true
         val source = activeMediaSource()
         if (source.isBlank()) {
             audioOnlyMode = false
+            updatePictureInPictureParams()
             return
         }
         val sourceIsVideo = activeMediaIsVideo()
@@ -1267,6 +1282,8 @@ class MainActivity : AppCompatActivity() {
     ) {
         enterPipWhenResumed = false
         setPipPresentation(false)
+        audioOnlyMode = true
+        updatePictureInPictureParams()
         val serviceIntent = Intent(this, MediaPlaybackService::class.java).apply {
             action = MediaPlaybackService.actionStart
             putExtra(MediaPlaybackService.extraSource, source)
