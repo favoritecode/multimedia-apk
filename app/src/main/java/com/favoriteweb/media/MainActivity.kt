@@ -424,6 +424,7 @@ class MainActivity : AppCompatActivity() {
                 installMediaStateObserver(view)
                 installAdLayerHider(view)
                 installHeaderSearchProtector(view)
+                installYoutubeSearchResultFallback(view)
                 super.onPageFinished(view, url)
             }
 
@@ -1583,9 +1584,7 @@ class MainActivity : AppCompatActivity() {
                         z-index: 2147483646 !important;
                       }
                       html.favorite-pip-active video,
-                      html.favorite-pip-active iframe.favorite-pip-frame-target,
-                      html.favorite-pip-active iframe[src*='youtube.com/embed/'],
-                      html.favorite-pip-active iframe[src*='youtube-nocookie.com/embed/'] {
+                      html.favorite-pip-active iframe.favorite-pip-frame-target {
                         position: fixed !important;
                         display: block !important;
                         visibility: visible !important;
@@ -1640,7 +1639,7 @@ class MainActivity : AppCompatActivity() {
                         if (frameOrigin !== activeFrameOrigin) return;
                         var rect = frame.getBoundingClientRect();
                         var area = Math.max(0, rect.width) * Math.max(0, rect.height);
-                        if (area > bestArea) {
+                        if (area >= bestArea) {
                           bestArea = area;
                           bestFrame = frame;
                         }
@@ -1650,7 +1649,7 @@ class MainActivity : AppCompatActivity() {
                       frames.forEach(function(frame){
                         var rect = frame.getBoundingClientRect();
                         var area = Math.max(0, rect.width) * Math.max(0, rect.height);
-                        if (area > bestArea) {
+                        if (area >= bestArea) {
                           bestArea = area;
                           bestFrame = frame;
                         }
@@ -2185,12 +2184,32 @@ class MainActivity : AppCompatActivity() {
                   if (window.__favoriteHeaderSearchProtectorInstalled) return;
                   window.__favoriteHeaderSearchProtectorInstalled = true;
 
+                  function applyVisible(node) {
+                    node.style.removeProperty('display');
+                    node.style.removeProperty('visibility');
+                    node.style.removeProperty('opacity');
+                    node.style.removeProperty('pointer-events');
+                    node.style.setProperty('visibility', 'visible', 'important');
+                    node.style.setProperty('opacity', '1', 'important');
+                    node.style.setProperty('pointer-events', 'auto', 'important');
+                  }
+
                   function restoreHeaderSearch() {
                     if (document.documentElement.classList.contains('favorite-pip-active')) {
                       return;
                     }
                     var searchInput = document.querySelector('#custom-search-input');
                     if (!searchInput) return;
+                    var inputRect = searchInput.getBoundingClientRect();
+                    var inputStyle = window.getComputedStyle(searchInput);
+                    if (
+                      inputRect.width > 0 &&
+                      inputRect.height > 0 &&
+                      inputStyle.display !== 'none' &&
+                      inputStyle.visibility !== 'hidden'
+                    ) {
+                      return;
+                    }
 
                     [
                       '.head-wrapper',
@@ -2205,13 +2224,7 @@ class MainActivity : AppCompatActivity() {
                       '#BlogSearch1 .search-action'
                     ].forEach(function(selector){
                       document.querySelectorAll(selector).forEach(function(node){
-                        node.style.removeProperty('display');
-                        node.style.removeProperty('visibility');
-                        node.style.removeProperty('opacity');
-                        node.style.removeProperty('pointer-events');
-                        node.style.setProperty('visibility', 'visible', 'important');
-                        node.style.setProperty('opacity', '1', 'important');
-                        node.style.setProperty('pointer-events', 'auto', 'important');
+                        applyVisible(node);
                       });
                     });
 
@@ -2227,15 +2240,126 @@ class MainActivity : AppCompatActivity() {
                   }
 
                   restoreHeaderSearch();
-                  new MutationObserver(restoreHeaderSearch).observe(document.documentElement, {
-                    childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ['class', 'style']
-                  });
                   window.addEventListener('pageshow', restoreHeaderSearch, { passive: true });
                   window.addEventListener('focus', restoreHeaderSearch, { passive: true });
-                  window.setInterval(restoreHeaderSearch, 1000);
+                  window.addEventListener('resize', restoreHeaderSearch, { passive: true });
+                  window.setTimeout(restoreHeaderSearch, 300);
+                  window.setTimeout(restoreHeaderSearch, 1200);
+                })();
+            """.trimIndent(),
+            null
+        )
+    }
+
+    private fun installYoutubeSearchResultFallback(webView: WebView) {
+        webView.evaluateJavascript(
+            """
+                (function(){
+                  if (window.__favoriteYoutubeSearchFallbackInstalled) return;
+                  window.__favoriteYoutubeSearchFallbackInstalled = true;
+
+                  function normalizeYouTubeSearch(value) {
+                    var input = String(value || '').trim();
+                    try {
+                      var parsed = new URL(/^https?:\/\//i.test(input) ? input : 'https://' + input);
+                      var host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+                      var videoId = '';
+                      if (host === 'youtu.be') {
+                        videoId = parsed.pathname.split('/').filter(Boolean)[0] || '';
+                      } else if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+                        videoId = parsed.searchParams.get('v') || '';
+                        if (!videoId) {
+                          var parts = parsed.pathname.split('/').filter(Boolean);
+                          if (['shorts', 'embed', 'live'].indexOf(parts[0]) !== -1) {
+                            videoId = parts[1] || '';
+                          }
+                        }
+                      }
+                      if (/^[A-Za-z0-9_-]{6,}$/.test(videoId)) {
+                        return 'https://www.youtube.com/watch?v=' + videoId;
+                      }
+                    } catch (_) {}
+                    return input;
+                  }
+
+                  function apiKeyFromPage() {
+                    var scripts = Array.from(document.scripts);
+                    for (var index = 0; index < scripts.length; index++) {
+                      var match = (scripts[index].textContent || '').match(/API_KEY\s*=\s*["']([^"']+)["']/);
+                      if (match && match[1]) return match[1];
+                    }
+                    return '';
+                  }
+
+                  function ensureYoutubeResults() {
+                    if (!/\/search(?:\?|$)/.test(location.pathname + location.search)) return;
+                    var query = new URLSearchParams(location.search).get('q');
+                    if (!query) return;
+                    if (document.querySelector('.yt-wrap .yt-card')) return;
+
+                    var blogWrap = document.querySelector('.index-post-wrap');
+                    if (!blogWrap || !blogWrap.parentNode) return;
+                    var key = apiKeyFromPage();
+                    if (!key) return;
+
+                    var ytWrap = document.querySelector('.yt-wrap');
+                    if (!ytWrap) {
+                      var section = document.createElement('div');
+                      section.className = 'favorite-youtube-search-fallback';
+
+                      var heading = document.createElement('div');
+                      heading.className = 'title-wrap main-title';
+                      heading.innerHTML = '<h3 class="title">Video Results</h3>';
+
+                      ytWrap = document.createElement('div');
+                      ytWrap.className = 'index-post-wrap yt-wrap';
+
+                      section.appendChild(heading);
+                      section.appendChild(ytWrap);
+                      blogWrap.parentNode.insertBefore(section, blogWrap.nextSibling);
+                    }
+
+                    var url = 'https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=12&q=' +
+                      encodeURIComponent(normalizeYouTubeSearch(query)) +
+                      '&key=' + encodeURIComponent(key);
+
+                    fetch(url)
+                      .then(function(response){ return response.json(); })
+                      .then(function(data){
+                        if (document.querySelector('.yt-wrap .yt-card')) return;
+                        (data.items || []).forEach(function(item){
+                          if (!item || !item.id || !item.id.videoId || !item.snippet) return;
+                          var card = document.createElement('article');
+                          card.className = 'index-post yt-card';
+                          card.dataset.id = item.id.videoId;
+
+                          var thumb = document.createElement('div');
+                          thumb.className = 'post-thumb no-thumb';
+                          thumb.style.cursor = 'pointer';
+
+                          var img = document.createElement('img');
+                          var thumbnails = item.snippet.thumbnails || {};
+                          img.src = (thumbnails.medium || thumbnails.default || {}).url || '';
+                          thumb.appendChild(img);
+
+                          var title = document.createElement('h3');
+                          title.className = 'title';
+                          title.textContent = item.snippet.title || '';
+                          title.style.cursor = 'pointer';
+
+                          card.appendChild(thumb);
+                          card.appendChild(title);
+                          ytWrap.appendChild(card);
+                        });
+                      })
+                      .catch(function(){});
+                  }
+
+                  window.setTimeout(ensureYoutubeResults, 1800);
+                  window.setTimeout(ensureYoutubeResults, 4500);
+                  window.addEventListener('pageshow', function(){
+                    window.setTimeout(ensureYoutubeResults, 1200);
+                  }, { passive: true });
                 })();
             """.trimIndent(),
             null
