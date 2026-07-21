@@ -141,6 +141,7 @@ class MainActivity : AppCompatActivity() {
         "advertising.com",
         "adzerk.net",
         "adxcel-ec2.com",
+        "adcash.com",
         "adnxs.com",
         "adroll.com",
         "adtrafficquality.google",
@@ -187,6 +188,9 @@ class MainActivity : AppCompatActivity() {
         "googletagservices.com",
         "gstaticadssl.l.google.com",
         "histats.com",
+        "highperformancecpmgate.com",
+        "highperformancedformats.com",
+        "highrevenuegate.com",
         "hotjar.com",
         "imasdk.googleapis.com",
         "imrworldwide.com",
@@ -203,6 +207,8 @@ class MainActivity : AppCompatActivity() {
         "nielsen.com",
         "omnitagjs.com",
         "openx.net",
+        "onclickalgo.com",
+        "onclickperformance.com",
         "outbrain.com",
         "popads.net",
         "popcash.net",
@@ -234,6 +240,7 @@ class MainActivity : AppCompatActivity() {
         "trafficstars.com",
         "tribalfusion.com",
         "triplelift.com",
+        "tsyndicate.com",
         "tynt.com",
         "vidoomy.com",
         "voluumtrk.com",
@@ -241,7 +248,9 @@ class MainActivity : AppCompatActivity() {
         "zedo.com",
         "zemanta.com",
         "yieldmo.com",
-        "yieldtraffic.com"
+        "yieldtraffic.com",
+        "yllix.com",
+        "yadro.ru"
     )
 
     private val blockedPathParts = setOf(
@@ -254,6 +263,7 @@ class MainActivity : AppCompatActivity() {
         "/banners",
         "/clickunder",
         "/creative/",
+        "/delivery/",
         "/doubleclick/",
         "/floatads",
         "/googleads.",
@@ -266,6 +276,7 @@ class MainActivity : AppCompatActivity() {
         "/popunder",
         "/popup",
         "/redirect?",
+        "/redirect/",
         "/prebid",
         "/promoads",
         "/pushads",
@@ -289,6 +300,7 @@ class MainActivity : AppCompatActivity() {
         "banner_ad",
         "clickid=",
         "clickunder",
+        "directlink",
         "displayads",
         "exo_",
         "googletag",
@@ -967,6 +979,11 @@ class MainActivity : AppCompatActivity() {
             actionPip -> enterPipModeIfPossible()
             actionAudioOnly -> enableAudioOnlyMode()
             MediaPlaybackService.actionPlaybackFailed -> handleNativeAudioFailure(intent)
+            Intent.ACTION_MAIN -> {
+                if (audioOnlyMode || nativeAudioStarted || MediaPlaybackService.isActive) {
+                    restoreFromNativeAudio()
+                }
+            }
             actionOpen -> {
                 restoreFromNativeAudio()
             }
@@ -1294,6 +1311,18 @@ class MainActivity : AppCompatActivity() {
         startService(Intent(this, MediaPlaybackService::class.java).apply { action = command })
     }
 
+    private fun stopBackgroundAudioForForegroundPlayback() {
+        if (!nativeAudioStarted && !MediaPlaybackService.isActive) return
+        sendNativeAudioCommand(MediaPlaybackService.actionStop)
+        nativeAudioStarted = false
+        frameAudioOnlyMode = false
+        youtubeAudioOnlyMode = false
+        audioOnlyMode = false
+        pendingFrameAudioFallbackSrc = ""
+        pendingFrameAudioFallbackTime = 0.0
+        setVideoVisible(true)
+    }
+
     private fun restoreFromNativeAudio() {
         if (youtubeAudioOnlyMode) {
             youtubeAudioOnlyMode = false
@@ -1406,6 +1435,12 @@ class MainActivity : AppCompatActivity() {
                 (function(){
                   document.querySelectorAll('video').forEach(function(video){
                     video.style.opacity = '$opacity';
+                    if ($visible) {
+                      video.style.removeProperty('visibility');
+                      video.style.removeProperty('display');
+                      video.muted = false;
+                      video.controls = true;
+                    }
                   });
                 })();
             """.trimIndent(),
@@ -1881,6 +1916,14 @@ class MainActivity : AppCompatActivity() {
                 val currentSrc = src.orEmpty()
                 val currentIsVideo = kind.equals("video", ignoreCase = true)
                 if (
+                    playing &&
+                    currentSrc.isNotBlank() &&
+                    !continuityRestorePending &&
+                    (nativeAudioStarted || MediaPlaybackService.isActive)
+                ) {
+                    stopBackgroundAudioForForegroundPlayback()
+                }
+                if (
                     currentSrc.isBlank() &&
                     frameMediaSrc.isNotBlank() &&
                     SystemClock.elapsedRealtime() - frameMediaUpdatedAt < 2_500L
@@ -2073,8 +2116,8 @@ class MainActivity : AppCompatActivity() {
                   if (window.__favoriteAdLayerHiderInstalled) return;
                   window.__favoriteAdLayerHiderInstalled = true;
 
-                  var adText = /(adsbygoogle|adsterra|ad-container|ad_container|ad-wrapper|ad_wrapper|ad-banner|ad_banner|adframe|ad_iframe|advertisement|banner-ad|banner_ad|floatads|float-ads|popup-ad|popunder|sponsor|taboola|outbrain|propeller)/i;
-                  var adSrc = /(doubleclick|googlesyndication|googleadservices|adservice|adsterra|adnxs|adskeeper|propellerads|popads|popmyads|onclick|taboola|outbrain|adserver|adserve|vast|vpaid)/i;
+                  var adText = /(adsbygoogle|adsterra|ad-container|ad_container|ad-wrapper|ad_wrapper|ad-banner|ad_banner|adframe|ad_iframe|advertisement|banner-ad|banner_ad|floatads|float-ads|popup-ad|popunder|sponsor|taboola|outbrain|propeller|directlink|interstitial|modal-ad|overlay-ad)/i;
+                  var adSrc = /(doubleclick|googlesyndication|googleadservices|adservice|adsterra|adnxs|adskeeper|propellerads|popads|popmyads|onclick|taboola|outbrain|adserver|adserve|highrevenuegate|highperformancedformats|trafficjunky|tsyndicate|yllix|vast|vpaid)/i;
 
                   function isMediaElement(node) {
                     if (!node || node.nodeType !== 1) return false;
@@ -2082,7 +2125,7 @@ class MainActivity : AppCompatActivity() {
                     if (node.querySelector && node.querySelector('video,audio')) return true;
                     if (node.tagName === 'IFRAME') {
                       var src = node.src || node.getAttribute('data-src') || '';
-                      return /youtube(?:-nocookie)?\.com\/embed|abyssplayer\.com|player|jwplayer|stream|video/i.test(src);
+                      return /youtube(?:-nocookie)?\.com\/embed|abyssplayer\.com|dood(?:stream|watch|\.(?:to|so|la|re|pm|wf))|doods?\.(?:to|so|la|re|pm|wf|watch)|player|jwplayer|stream|video/i.test(src);
                     }
                     return false;
                   }
@@ -2120,6 +2163,17 @@ class MainActivity : AppCompatActivity() {
                       if (!Number.isFinite(z) || z < 999) return;
                       var rect = node.getBoundingClientRect();
                       var area = Math.max(0, rect.width) * Math.max(0, rect.height);
+                      var almostTransparent = parseFloat(style.opacity || '1') < 0.08;
+                      var noVisibleText = (node.innerText || '').trim().length < 2;
+                      if (
+                        area > viewportArea * 0.12 &&
+                        noVisibleText &&
+                        (almostTransparent || style.backgroundColor === 'rgba(0, 0, 0, 0)') &&
+                        !node.querySelector('textarea, input, form, button, video, audio, iframe')
+                      ) {
+                        hide(node);
+                        return;
+                      }
                       if (area > viewportArea * 0.18 && !node.querySelector('textarea, input, form')) {
                         hide(node);
                       }
