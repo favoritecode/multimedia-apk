@@ -2119,13 +2119,47 @@ class MainActivity : AppCompatActivity() {
                   var adText = /(adsbygoogle|adsterra|ad-container|ad_container|ad-wrapper|ad_wrapper|ad-banner|ad_banner|adframe|ad_iframe|advertisement|banner-ad|banner_ad|floatads|float-ads|popup-ad|popunder|sponsor|taboola|outbrain|propeller|directlink|interstitial|modal-ad|overlay-ad)/i;
                   var adSrc = /(doubleclick|googlesyndication|googleadservices|adservice|adsterra|adnxs|adskeeper|propellerads|popads|popmyads|onclick|taboola|outbrain|adserver|adserve|highrevenuegate|highperformancedformats|trafficjunky|tsyndicate|yllix|vast|vpaid)/i;
 
+                  function safeFrameSource(src) {
+                    return /youtube(?:-nocookie)?\.com\/embed|youtu\.be|youtube\.com\/watch|abyssplayer\.com|dood(?:stream|watch|\.(?:to|so|la|re|pm|wf))|doods?\.(?:to|so|la|re|pm|wf|watch)|player|jwplayer|stream|video/i.test(src || '');
+                  }
+
+                  function hasProtectedPlayer(node) {
+                    if (!node || node.nodeType !== 1) return false;
+                    if (node.querySelector && node.querySelector('video,audio')) return true;
+                    if (node.querySelectorAll) {
+                      return Array.from(node.querySelectorAll('iframe')).some(function(frame){
+                        return safeFrameSource(frame.src || frame.getAttribute('data-src') || '');
+                      });
+                    }
+                    return false;
+                  }
+
+                  function restoreProtectedPlayers() {
+                    Array.from(document.querySelectorAll('video,audio,iframe')).forEach(function(node){
+                      var src = node.src || node.currentSrc || node.getAttribute('data-src') || '';
+                      if (!node.matches('video,audio') && !safeFrameSource(src)) return;
+                      var current = node;
+                      var depth = 0;
+                      while (current && current.nodeType === 1 && depth < 4) {
+                        if (current.__favoriteAdHidden) {
+                          current.__favoriteAdHidden = false;
+                          current.style.removeProperty('display');
+                          current.style.removeProperty('visibility');
+                          current.style.removeProperty('pointer-events');
+                        }
+                        current = current.parentElement;
+                        depth++;
+                      }
+                    });
+                  }
+
                   function isMediaElement(node) {
                     if (!node || node.nodeType !== 1) return false;
                     if (node.matches && node.matches('video,audio')) return true;
-                    if (node.querySelector && node.querySelector('video,audio')) return true;
+                    if (hasProtectedPlayer(node)) return true;
                     if (node.tagName === 'IFRAME') {
                       var src = node.src || node.getAttribute('data-src') || '';
-                      return /youtube(?:-nocookie)?\.com\/embed|abyssplayer\.com|dood(?:stream|watch|\.(?:to|so|la|re|pm|wf))|doods?\.(?:to|so|la|re|pm|wf|watch)|player|jwplayer|stream|video/i.test(src);
+                      return safeFrameSource(src);
                     }
                     return false;
                   }
@@ -2139,6 +2173,7 @@ class MainActivity : AppCompatActivity() {
                   }
 
                   function scan() {
+                    restoreProtectedPlayers();
                     var viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
                     Array.from(document.querySelectorAll('iframe, ins, aside, div, section')).forEach(function(node){
                       if (isMediaElement(node)) return;
