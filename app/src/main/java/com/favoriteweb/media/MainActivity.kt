@@ -1007,7 +1007,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun activeMediaSource(): String {
-        if (lockedMediaSrc.isNotBlank()) return lockedMediaSrc
+        if (mediaContinuityLocked && lockedMediaSrc.isNotBlank()) return lockedMediaSrc
         if (observedMediaSrc.isNotBlank()) return observedMediaSrc
         if (
             frameMediaSrc.isNotBlank() &&
@@ -1739,16 +1739,17 @@ class MainActivity : AppCompatActivity() {
                     (function(){
                       var expectedSrc = ${JSONObject.quote(expectedSrc)};
                       var expectedTime = $expectedTime;
-                      var videos = Array.from(document.querySelectorAll('video'));
-                      var media = videos.find(function(video){
-                        return (video.currentSrc || video.src) === expectedSrc;
-                      }) || videos.find(function(video){
-                        return !video.paused && !video.ended;
-                      }) || videos[0];
+                      var mediaItems = Array.from(document.querySelectorAll('video, audio'));
+                      var media = mediaItems.find(function(item){
+                        return (item.currentSrc || item.src) === expectedSrc;
+                      }) || mediaItems.find(function(item){
+                        return !item.paused && !item.ended;
+                      }) || mediaItems[0];
                       if (!media) return false;
 
                       var currentSrc = media.currentSrc || media.src || '';
                       var sourceChanged = currentSrc !== expectedSrc;
+                      var isVideo = String(media.tagName || '').toLowerCase() === 'video';
                       var restore = function(){
                         try {
                           if (sourceChanged || (media.currentTime || 0) + 1.5 < expectedTime) {
@@ -1756,7 +1757,9 @@ class MainActivity : AppCompatActivity() {
                           }
                         } catch(e) {}
                         media.muted = false;
-                        media.style.opacity = ${if (hideVideo) "'0'" else "'1'"};
+                        if (isVideo) {
+                          media.style.opacity = ${if (hideVideo) "'0'" else "'1'"};
+                        }
                         if ($shouldPlay && media.paused) media.play();
                       };
 
