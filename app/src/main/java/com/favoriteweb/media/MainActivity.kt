@@ -1228,9 +1228,12 @@ class MainActivity : AppCompatActivity() {
                     return !item.paused && !item.ended;
                   }) || videos[0];
                   if (media) {
+                    var isVideo = String(media.tagName || '').toLowerCase() === 'video';
                     media.pause();
                     media.muted = true;
-                    media.style.opacity = '0';
+                    if (isVideo) {
+                      media.style.opacity = '0';
+                    }
                   }
                   var episodeList = [];
                   try {
